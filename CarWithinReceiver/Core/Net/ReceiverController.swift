@@ -335,6 +335,16 @@ final class ReceiverController: ObservableObject {
             if pipeline.configure(format) {
                 if phase != .streaming { phase = .waiting }
                 statusText = "正在解码 \(format.name)…"
+            } else if format.isHEVC, preferHEVC {
+                // 这台设备吃不下 H.265：把自己的能力改成不支持，让 iPhone 换 H.264 再连一次。
+                preferHEVC = false
+                statusText = "H.265 解码不支持，已切回 H.264 重连…"
+                phase = .connecting
+                attempt = 0
+                Task { [weak self] in
+                    try? await Task.sleep(nanoseconds: 800_000_000)
+                    self?.open()
+                }
             } else {
                 statusText = "无法解码 \(format.name)"
                 phase = .failed("无法解码 \(format.codec)，请在 CarWithin 改用 H.264")
