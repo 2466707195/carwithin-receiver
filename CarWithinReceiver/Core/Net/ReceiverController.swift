@@ -67,6 +67,7 @@ final class ReceiverController: ObservableObject {
     private var receiveLoop: Task<Void, Never>?
     private var heartbeat: Task<Void, Never>?
     private var reconnectTask: Task<Void, Never>?
+    private var sendChain: Task<Void, Never>?
 
     private var wantsConnection = false
     private var attempt = 0
@@ -271,6 +272,7 @@ final class ReceiverController: ObservableObject {
         receiveLoop = nil
         heartbeat?.cancel()
         heartbeat = nil
+        sendChain = nil
         socket?.cancel(with: .goingAway, reason: nil)
         socket = nil
         urlSession?.invalidateAndCancel()
@@ -504,7 +506,13 @@ final class ReceiverController: ObservableObject {
         guard JSONSerialization.isValidJSONObject(object),
               let data = try? JSONSerialization.data(withJSONObject: object),
               let text = String(data: data, encoding: .utf8) else { return }
-        Task { try? await socket.send(.string(text)) }
+        // 串行发送：触摸消息带的是「当前全部手指」，乱序会让画面上的手指跳一下。
+        let previous = sendChain
+        sendChain = Task { [weak self] in
+            _ = await previous?.value
+            guard let self, self.socket === socket else { return }
+            try? await socket.send(.string(text))
+        }
     }
 
     // MARK: - 最近使用
